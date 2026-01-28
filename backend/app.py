@@ -191,9 +191,15 @@ def kroger_api_product_search(search_term: str, limit: int = 20):
         if not isinstance(it, dict):
             continue
         desc = it.get("description") or it.get("brand") or "Unknown"
-        pid = it.get("productId") or it.get("upc") or ""
-        # API doesn't always return a public web URL; build a best-effort one for "View on store"
-        web_url = f"https://www.kroger.com/p/{pid}" if pid else ""
+        # Use productPageURI if available (includes proper slug format), otherwise construct from productId
+        product_page_uri = it.get("productPageURI", "")
+        if product_page_uri:
+            # productPageURI is relative (e.g., "/p/smart-way-white-bread/0001111014423?...")
+            web_url = f"https://www.kroger.com{product_page_uri}" if not product_page_uri.startswith("http") else product_page_uri
+        else:
+            # Fallback: construct URL from productId (less reliable, may be blocked)
+            pid = it.get("productId") or it.get("upc") or ""
+            web_url = f"https://www.kroger.com/p/{pid}" if pid else ""
         price = "N/A"
         try:
             items0 = it.get("items")
