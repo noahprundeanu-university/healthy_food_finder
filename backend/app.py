@@ -31,6 +31,22 @@ except ImportError:
 # Load environment variables from .env file
 load_dotenv()
 
+# Local-only demo secret loader: allows "baked-in" behavior without committing secrets.
+# If `backend/demo_secrets.py` exists and env vars are not set, we'll read from it.
+try:
+    from demo_secrets import KROGER_CLIENT_ID as _DEMO_KROGER_CLIENT_ID
+    from demo_secrets import KROGER_CLIENT_SECRET as _DEMO_KROGER_CLIENT_SECRET
+    from demo_secrets import KROGER_LOCATION_ID as _DEMO_KROGER_LOCATION_ID
+
+    if not os.getenv("KROGER_CLIENT_ID") and _DEMO_KROGER_CLIENT_ID:
+        os.environ["KROGER_CLIENT_ID"] = _DEMO_KROGER_CLIENT_ID
+    if not os.getenv("KROGER_CLIENT_SECRET") and _DEMO_KROGER_CLIENT_SECRET:
+        os.environ["KROGER_CLIENT_SECRET"] = _DEMO_KROGER_CLIENT_SECRET
+    if not os.getenv("KROGER_LOCATION_ID") and _DEMO_KROGER_LOCATION_ID:
+        os.environ["KROGER_LOCATION_ID"] = _DEMO_KROGER_LOCATION_ID
+except Exception:
+    pass
+
 app = Flask(__name__)
 CORS(app)
 
