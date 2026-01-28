@@ -68,6 +68,21 @@ DEFAULT_FILTERS = [
 user_filters = {}
 product_cache = {}
 cache_expiry = {}
+# Incremented whenever a user's filters change, so cached searches are invalidated.
+user_filter_versions = {}
+
+
+def _bump_filter_version(user_id: str) -> int:
+    user_filter_versions[user_id] = int(user_filter_versions.get(user_id, 0)) + 1
+    return user_filter_versions[user_id]
+
+
+def _invalidate_user_cache(user_id: str) -> None:
+    """Remove cached search results for a user (any store/query)."""
+    keys = [k for k in product_cache.keys() if k.endswith(f"_{user_id}")]
+    for k in keys:
+        product_cache.pop(k, None)
+        cache_expiry.pop(k, None)
 
 # Kroger API token cache (service-to-service OAuth)
 _KROGER_TOKEN = None
@@ -1626,8 +1641,9 @@ def search_products():
     # Get user's filters
     filters = user_filters.get(user_id, DEFAULT_FILTERS.copy())
     
-    # Check cache (include store in cache key)
-    cache_key = f"{store}_{search_term}_{user_id}"
+    # Check cache (include store + user + filter version in cache key)
+    filter_version = int(user_filter_versions.get(user_id, 0))
+    cache_key = f"{store}_{search_term}_{user_id}_fv{filter_version}"
     if cache_key in product_cache:
         cache_time = cache_expiry.get(cache_key)
         if cache_time and datetime.now() < cache_time:
@@ -1709,6 +1725,8 @@ def add_filter():
     
     if filter_term.lower() not in [f.lower() for f in user_filters[user_id]]:
         user_filters[user_id].append(filter_term)
+        _bump_filter_version(user_id)
+        _invalidate_user_cache(user_id)
     
     return jsonify({'filters': user_filters[user_id]})
 
@@ -1723,8 +1741,11 @@ def remove_filter():
         return jsonify({'error': 'Filter term required'}), 400
     
     if user_id in user_filters:
-        user_filters[user_id] = [f for f in user_filters[user_id] 
-                                if f.lower() != filter_term.lower()]
+        before = list(user_filters[user_id])
+        user_filters[user_id] = [f for f in user_filters[user_id] if f.lower() != filter_term.lower()]
+        if before != user_filters[user_id]:
+            _bump_filter_version(user_id)
+            _invalidate_user_cache(user_id)
     
     return jsonify({'filters': user_filters.get(user_id, DEFAULT_FILTERS.copy())})
 
