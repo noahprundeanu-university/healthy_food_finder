@@ -43,17 +43,29 @@ function App() {
         }),
       });
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
       if (data.products) {
         setProducts(data.products);
         setStats({
           total_found: data.total_found || 0,
           filtered_count: data.filtered_count || 0
         });
+      } else {
+        setProducts([]);
+        setStats({ total_found: 0, filtered_count: 0 });
       }
     } catch (error) {
       console.error('Error searching products:', error);
-      alert('Error searching products. Please try again.');
+      alert(`Error searching products: ${error.message || 'Please try again.'}`);
     } finally {
       setLoading(false);
     }
