@@ -189,13 +189,11 @@ def create_selenium_driver():
     if firefox_binary:
         firefox_options.binary_location = firefox_binary
     
+    # webdriver-manager sometimes shells out to `firefox` to detect versions; on systems with
+    # LibreWolf but no `firefox` binary, that spams `/bin/sh: 1: firefox: not found` and can
+    # contribute to flakiness. Selenium 4+ can manage drivers automatically; prefer that path.
     try:
-        if WEBDRIVER_MANAGER_AVAILABLE:
-            service = FirefoxService(GeckoDriverManager().install())
-            driver = webdriver.Firefox(service=service, options=firefox_options)
-        else:
-            # Try to use system geckodriver
-            driver = webdriver.Firefox(options=firefox_options)
+        driver = webdriver.Firefox(options=firefox_options)
         
         # Execute script to hide webdriver property
         driver.execute_script("""
@@ -212,6 +210,23 @@ def create_selenium_driver():
         else:
             error_msg += " Make sure geckodriver is installed."
         raise Exception(error_msg)
+
+
+def _looks_like_product_url(store: str, url: str) -> bool:
+    """Heuristic guardrail to avoid non-product links (cart, cookie consent, terms, etc.)."""
+    if not url:
+        return False
+    u = url.lower()
+    # Common non-product pages that frequently appear in search DOMs
+    if any(x in u for x in ["/cart", "/account", "/signin", "/login", "/terms", "/privacy", "onetrust.com"]):
+        return False
+    if store == "kroger":
+        # Kroger product detail pages are typically /p/<name>/<id>
+        return ("/p/" in u) and ("kroger.com" in u or u.startswith("/"))
+    if store == "walmart":
+        # Walmart product pages are typically /ip/<name>/<id>
+        return ("/ip/" in u) and ("walmart.com" in u or u.startswith("/"))
+    return True
 
 def scrape_heb_product_selenium(search_term, limit=20):
     """Scrape HEB using Selenium with browser emulation"""
@@ -1177,11 +1192,10 @@ def scrape_kroger_product(search_term, limit=20):
                 continue
         
         # Strategy 2: Look for product links with various patterns
+        # IMPORTANT: Kroger pages include many non-product links (terms, coupons, cart, etc.).
+        # Prefer the canonical product page pattern.
         product_link_patterns = [
             r'/p/',
-            r'/product/',
-            r'/shop/product',
-            r'/products/',
         ]
         
         all_product_links = []
@@ -1240,8 +1254,12 @@ def scrape_kroger_product(search_term, limit=20):
                 url = link.get('href', '')
                 if not url:
                     continue
+                if not _looks_like_product_url("kroger", url):
+                    continue
                 if not url.startswith('http'):
                     url = 'https://www.kroger.com' + url
+                if not _looks_like_product_url("kroger", url):
+                    continue
                 
                 name = link.get_text(strip=True)
                 if not name or len(name) < 3:
@@ -1391,10 +1409,9 @@ def scrape_walmart_product(search_term, limit=20):
                 continue
         
         # Strategy 2: Look for product links with various patterns
+        # IMPORTANT: Prefer canonical Walmart product page patterns.
         product_link_patterns = [
             r'/ip/',
-            r'/product/',
-            r'/p/',
             r'/grocery/ip/',
         ]
         
@@ -1453,8 +1470,12 @@ def scrape_walmart_product(search_term, limit=20):
                 url = link.get('href', '')
                 if not url:
                     continue
+                if not _looks_like_product_url("walmart", url):
+                    continue
                 if not url.startswith('http'):
                     url = 'https://www.walmart.com' + url
+                if not _looks_like_product_url("walmart", url):
+                    continue
                 
                 name = link.get_text(strip=True)
                 if not name or len(name) < 3:
@@ -1577,14 +1598,19 @@ def search_products():
         }), 500
     
     # Filter products based on ingredients
+    # NOTE: Kroger/Walmart ingredient extraction is unreliable and very slow if we try to
+    # open each product page during search. Also, bad/non-product URLs can slip in.
+    # For now: only attempt ingredient fetching when the URL looks like a real product page.
     filtered_products = []
     for product in products:
         # If ingredients not available, try to fetch them (but don't block if it fails)
         if not product.get('ingredients') and product.get('url'):
             try:
-                details = get_product_details(product.get('url', ''))
-                if details and details.get('ingredients'):
-                    product['ingredients'] = details.get('ingredients', '')
+                purl = product.get('url', '')
+                if _looks_like_product_url(store, purl):
+                    details = get_product_details(purl)
+                    if details and details.get('ingredients'):
+                        product['ingredients'] = details.get('ingredients', '')
             except Exception as e:
                 # If fetching ingredients fails, continue without them
                 # Products without ingredients will pass the filter check
