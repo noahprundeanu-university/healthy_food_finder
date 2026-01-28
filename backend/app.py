@@ -1125,16 +1125,35 @@ def scrape_kroger_product(search_term, limit=20):
         driver.set_page_load_timeout(12)
         driver.implicitly_wait(2)
         
-        # Kroger search URL
-        search_url = f"https://www.kroger.com/search?query={search_term.replace(' ', '+')}"
+        # Kroger search URL - try multiple URL patterns
+        search_urls = [
+            f"https://www.kroger.com/search?query={search_term.replace(' ', '+')}",
+            f"https://www.kroger.com/search?q={search_term.replace(' ', '+')}",
+            f"https://www.kroger.com/s/search?query={search_term.replace(' ', '+')}",
+        ]
         
-        print(f"Loading Kroger search page: {search_url}")
-        try:
-            driver.get(search_url)
-        except Exception as e:
-            print(f"Page load timeout or error: {e}")
+        soup = None
+        for search_url in search_urls:
+            print(f"Loading Kroger search page: {search_url}")
+            try:
+                driver.get(search_url)
+                time.sleep(3)  # Wait for page to load
+                
+                # Check if page loaded properly
+                page_source = driver.page_source
+                if len(page_source) > 5000:  # Reasonable page size
+                    soup = BeautifulSoup(page_source, 'html.parser')
+                    print(f"Successfully loaded page from {search_url}")
+                    break
+                else:
+                    print(f"Page too small ({len(page_source)} chars), trying next URL...")
+            except Exception as e:
+                print(f"Page load error for {search_url}: {e}")
+                continue
         
-        time.sleep(2)  # Wait for page to load
+        if soup is None:
+            print("ERROR: Could not load any Kroger search page")
+            return []
         
         # Parse page source
         soup = BeautifulSoup(driver.page_source, 'html.parser')
@@ -1162,6 +1181,46 @@ def scrape_kroger_product(search_term, limit=20):
                 unique_links.append(link)
         
         print(f"Found {len(unique_links)} unique product links from Kroger")
+        
+        # If no links found with standard patterns, try broader search
+        if len(unique_links) == 0:
+            print("No product links found with standard patterns. Trying broader search...")
+            # Look for any links that might be products
+            all_links = soup.find_all('a', href=True)
+            print(f"Total links on page: {len(all_links)}")
+            
+            # Sample some links for debugging
+            if all_links:
+                print("Sample links found:")
+                for link in all_links[:5]:
+                    href = link.get('href', '')[:80]
+                    text = link.get_text(strip=True)[:50]
+                    print(f"  - {href} | {text}")
+            
+            # Look for product-like links
+            for link in all_links[:200]:
+                href = link.get('href', '')
+                link_text = link.get_text(strip=True)
+                
+                # Skip obvious non-product links
+                skip_patterns = ['/cart', '/account', '/help', '/store', '/deals', '/recipes', 
+                               '/categories', '/brands', '/coupons', '/flyer', '/delivery', '/sign-in']
+                if any(skip in href.lower() for skip in skip_patterns):
+                    continue
+                
+                # Look for links that might be products
+                if href and len(href) > 5:
+                    # Check if link text looks like a product name
+                    if link_text and len(link_text) > 5 and len(link_text) < 200:
+                        # Exclude navigation text
+                        nav_words = ['shop', 'cart', 'account', 'help', 'menu', 'search', 'browse', 
+                                   'view all', 'see more', 'learn more', 'sign in', 'register']
+                        if not any(nav in link_text.lower() for nav in nav_words):
+                            unique_links.append(link)
+                            if len(unique_links) >= limit * 2:
+                                break
+            
+            print(f"Found {len(unique_links)} potential product links via alternative method")
         
         # Extract products from links
         for link in unique_links[:limit*2]:
@@ -1279,10 +1338,6 @@ def scrape_walmart_product(search_term, limit=20):
         except Exception as e:
             print(f"Page load timeout or error: {e}")
         
-        time.sleep(2)  # Wait for page to load
-        
-        # Parse page source
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
         products = []
         
         # Look for product links - Walmart uses various patterns
@@ -1425,10 +1480,8 @@ def search_products():
             products = scrape_heb_product(search_term)
         elif store == 'kroger':
             products = scrape_kroger_product(search_term)
-        elif store == 'walmart':
-            products = scrape_walmart_product(search_term)
         else:
-            return jsonify({'error': f'Unknown store: {store}'}), 400
+            return jsonify({'error': f'Unknown store: {store}. Supported stores: heb, kroger'}), 400
     except TimeoutError:
         return jsonify({
             'error': 'Search timed out. Please try again with a different search term.',

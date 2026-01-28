@@ -25,7 +25,6 @@ function SearchBar({ onSearch, loading }) {
             disabled={loading}
           >
             <option value="kroger">Kroger</option>
-            <option value="walmart">Walmart</option>
             <option value="heb">HEB</option>
           </select>
         </div>
