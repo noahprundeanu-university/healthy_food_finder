@@ -208,53 +208,44 @@ def create_selenium_driver():
 
 def scrape_heb_product_selenium(search_term, limit=20):
     """Scrape HEB using Selenium with browser emulation"""
+    import time
+    
     driver = None
+    start_time = time.time()
+    max_total_time = 25  # Maximum 25 seconds total
+    
+    def check_timeout():
+        if time.time() - start_time > max_total_time:
+            raise TimeoutError("Scraping operation timed out")
+    
     try:
         driver = create_selenium_driver()
+        # Set page load timeout
+        driver.set_page_load_timeout(12)
+        driver.implicitly_wait(2)  # Reduce implicit wait
+        
         search_url = f"https://www.heb.com/search/?q={search_term.replace(' ', '+')}"
         
         print(f"Loading HEB search page: {search_url}")
-        driver.get(search_url)
+        try:
+            driver.get(search_url)
+        except Exception as e:
+            print(f"Page load timeout or error: {e}")
+            # Continue anyway - page might have partially loaded
         
-        # Wait for page to load and bypass any initial checks
-        import time
-        time.sleep(3)  # Give Incapsula time to process
+        check_timeout()
+        
+        # Wait for page to load and bypass any initial checks (reduced time)
+        time.sleep(1.5)  # Reduced from 3 to 1.5 seconds
+        check_timeout()
         
         # Try to wait for product elements with multiple strategies
         products = []
         max_wait = 15
         
-        # Wait a bit more for content to fully load
-        time.sleep(2)
-        
-        # Strategy 1: Look for individual product cards/items
-        # HEB seems to use specific structures - try multiple selectors
-        selectors_to_try = [
-            (By.CSS_SELECTOR, "[data-testid*='product']"),
-            (By.CSS_SELECTOR, "[data-testid*='ProductCard']"),
-            (By.CSS_SELECTOR, "article[data-testid]"),
-            (By.CSS_SELECTOR, "div[data-testid*='product']"),
-            (By.CSS_SELECTOR, "[class*='ProductCard']"),
-            (By.CSS_SELECTOR, "[class*='product-card']"),
-            (By.CSS_SELECTOR, "[class*='product-item']"),
-            (By.CSS_SELECTOR, "[class*='product-tile']"),
-            (By.CSS_SELECTOR, "[data-product-id]"),
-            (By.CSS_SELECTOR, "article"),
-            (By.CSS_SELECTOR, "li[class*='product']"),
-        ]
-        
-        product_elements = []
-        for selector_type, selector in selectors_to_try:
-            try:
-                elements = WebDriverWait(driver, 5).until(
-                    EC.presence_of_all_elements_located((selector_type, selector))
-                )
-                if elements and len(elements) > 1:  # Make sure we get multiple elements, not one container
-                    product_elements = elements
-                    print(f"Found {len(elements)} product elements with selector: {selector}")
-                    break
-            except TimeoutException:
-                continue
+        # Skip element waiting - go straight to page source parsing (faster)
+        print("Parsing page source directly (faster approach)...")
+        product_elements = []  # Skip element-based extraction for speed
         
         # If we only found one element, it might be a container - try to find children
         if len(product_elements) == 1:
@@ -277,10 +268,8 @@ def scrape_heb_product_selenium(search_term, limit=20):
             except:
                 pass
         
-        # Always try parsing page source as fallback or supplement
-        # This helps when we find one container element with multiple products
-        print("Parsing page source for product links...")
-        time.sleep(1)  # Brief wait for any dynamic content
+        # Parse page source for product links (primary method - faster)
+        check_timeout()
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         
         # Look for product links - HEB uses various patterns
@@ -307,8 +296,9 @@ def scrape_heb_product_selenium(search_term, limit=20):
         
         print(f"Found {len(unique_links)} unique product links in page source")
         
-        # Extract products from links
+        # Extract products from links (with timeout checks)
         for link in unique_links[:limit*2]:
+            check_timeout()  # Check timeout periodically
             try:
                 # Get product URL
                 url = link.get('href', '')
@@ -582,11 +572,15 @@ def scrape_heb_product_selenium(search_term, limit=20):
                     print(f"Error parsing element: {e}")
                     continue
         
-        print(f"Total products extracted: {len(products)}")
+        elapsed = time.time() - start_time
+        print(f"Total products extracted: {len(products)} (took {elapsed:.1f}s)")
         if products:
             print(f"Sample product: {products[0]}")
         return products[:limit]
         
+    except TimeoutError:
+        print(f"Scraping operation timed out after {max_total_time} seconds")
+        return []
     except Exception as e:
         print(f"Selenium scraping error: {e}")
         import traceback
@@ -594,7 +588,10 @@ def scrape_heb_product_selenium(search_term, limit=20):
         return []
     finally:
         if driver:
-            driver.quit()
+            try:
+                driver.quit()
+            except:
+                pass
 
 def scrape_heb_product(search_term, limit=20):
     """
@@ -1011,6 +1008,8 @@ def health():
 @app.route('/api/search', methods=['POST'])
 def search_products():
     """Search for products and filter based on user criteria"""
+    import signal
+    
     data = request.json
     search_term = data.get('query', '')
     user_id = data.get('user_id', 'default')
@@ -1028,8 +1027,20 @@ def search_products():
         if cache_time and datetime.now() < cache_time:
             return jsonify({'products': product_cache[cache_key]})
     
-    # Scrape products
-    products = scrape_heb_product(search_term)
+    # Scrape products (timeout is handled inside scrape_heb_product_selenium)
+    try:
+        products = scrape_heb_product(search_term)
+    except TimeoutError:
+        return jsonify({
+            'error': 'Search timed out. Please try again with a different search term.',
+            'products': []
+        }), 408
+    except Exception as e:
+        print(f"Search error: {e}")
+        return jsonify({
+            'error': f'Search failed: {str(e)}',
+            'products': []
+        }), 500
     
     # Filter products based on ingredients
     filtered_products = []
