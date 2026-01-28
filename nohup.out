@@ -1,0 +1,12 @@
+ATTENTION: default value of option mesa_glthread overridden by environment.
+ATTENTION: default value of option mesa_glthread overridden by environment.
+ATTENTION: default value of option mesa_glthread overridden by environment.
+Crash Annotation GraphicsCriticalError: |[0][GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context (t=11.2208) [GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context
+Crash Annotation GraphicsCriticalError: |[0][GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context (t=11.2208) |[1][GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context (t=301.54) [GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context
+Crash Annotation GraphicsCriticalError: |[0][GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context (t=11.2208) |[1][GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context (t=301.54) |[2][GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context (t=975.724) [GFX1-]: GFX: CanvasTranslator failed creating WebGL shared context
+ATTENTION: default value of option mesa_glthread overridden by environment.
+ATTENTION: default value of option mesa_glthread overridden by environment.
+ATTENTION: default value of option mesa_glthread overridden by environment.
+ATTENTION: default value of option mesa_glthread overridden by environment.
+ATTENTION: default value of option mesa_glthread overridden by environment.
+ATTENTION: default value of option mesa_glthread overridden by environment.
