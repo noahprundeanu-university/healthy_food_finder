@@ -40,7 +40,9 @@ function ProductCard({ product }) {
       )}
       <div className="product-info">
         <h3 className="product-name">{product.name}</h3>
-        <p className="product-price">{product.price}</p>
+        {product.price && product.price !== 'N/A' && (
+          <p className="product-price">{product.price}</p>
+        )}
         {product.ingredients && (
           <div className="product-ingredients">
             <strong>Ingredients:</strong>

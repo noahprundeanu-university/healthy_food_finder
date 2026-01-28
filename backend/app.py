@@ -222,13 +222,35 @@ def kroger_api_product_search(search_term: str, limit: int = 20):
         except Exception:
             pass
 
+        # Ingredients (fast): v1 often provides ingredientStatement inside nutritionInformation
+        ingredients = ""
+        try:
+            nutrition = it.get("nutritionInformation")
+            if isinstance(nutrition, list) and nutrition:
+                stmt = nutrition[0].get("ingredientStatement") if isinstance(nutrition[0], dict) else ""
+                if stmt and isinstance(stmt, str):
+                    ingredients = stmt.strip()
+        except Exception:
+            pass
+
+        # Extra searchable text for filtering (helps catch banned items even if ingredientStatement missing)
+        extra_text_parts = []
+        for k in ("brand", "categories", "allergensDescription"):
+            v = it.get(k)
+            if isinstance(v, str):
+                extra_text_parts.append(v)
+            elif isinstance(v, list):
+                extra_text_parts.extend([x for x in v if isinstance(x, str)])
+        extra_text = " ".join(extra_text_parts).strip()
+
         out.append(
             {
                 "name": str(desc)[:200],
                 "price": price,
                 "url": web_url,
                 "image": image,
-                "ingredients": "",
+                "ingredients": ingredients,
+                "_filter_text": f"{desc} {ingredients} {extra_text}".strip(),
                 "store": "Kroger",
             }
         )
@@ -1641,28 +1663,17 @@ def search_products():
             'products': []
         }), 500
     
-    # Filter products based on ingredients
-    # NOTE: Kroger ingredient extraction is unreliable and very slow if we try to
-    # open each product page during search. Also, bad/non-product URLs can slip in.
-    # For now: only attempt ingredient fetching when the URL looks like a real product page.
+    # Filter products based on ingredients/text
+    # NOTE: Do NOT fetch product pages during search; it's slow and often blocked.
     filtered_products = []
     for product in products:
-        # If ingredients not available, try to fetch them (but don't block if it fails)
-        if not product.get('ingredients') and product.get('url'):
-            try:
-                purl = product.get('url', '')
-                if _looks_like_product_url(store, purl):
-                    details = get_product_details(purl)
-                    if details and details.get('ingredients'):
-                        product['ingredients'] = details.get('ingredients', '')
-            except Exception as e:
-                # If fetching ingredients fails, continue without them
-                # Products without ingredients will pass the filter check
-                print(f"Could not fetch ingredients for {product.get('name', 'unknown')}: {e}")
-        
         # Check if product passes filters
-        # Products without ingredients listed will pass (assumed safe)
-        if check_ingredients(product.get('ingredients', ''), filters):
+        # Use a combined text field so we can filter even when ingredientStatement is missing.
+        filter_text = product.get("_filter_text") or f"{product.get('name','')} {product.get('ingredients','')}"
+        if check_ingredients(filter_text, filters):
+            # Strip internal field before returning to client
+            if "_filter_text" in product:
+                del product["_filter_text"]
             filtered_products.append(product)
     
     # Cache results for 5 minutes
