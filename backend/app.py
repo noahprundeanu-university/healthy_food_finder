@@ -1556,14 +1556,14 @@ def search_products():
         if cache_time and datetime.now() < cache_time:
             return jsonify({'products': product_cache[cache_key]})
     
-        # Scrape products based on selected store
-        try:
-            if store == 'kroger':
-                products = scrape_kroger_product(search_term)
-            elif store == 'walmart':
-                products = scrape_walmart_product(search_term)
-            else:
-                return jsonify({'error': f'Unknown store: {store}. Supported stores: kroger, walmart'}), 400
+    # Scrape products based on selected store
+    try:
+        if store == 'kroger':
+            products = scrape_kroger_product(search_term)
+        elif store == 'walmart':
+            products = scrape_walmart_product(search_term)
+        else:
+            return jsonify({'error': f'Unknown store: {store}. Supported stores: kroger, walmart'}), 400
     except TimeoutError:
         return jsonify({
             'error': 'Search timed out. Please try again with a different search term.',
