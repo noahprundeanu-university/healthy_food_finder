@@ -221,8 +221,9 @@ def _looks_like_product_url(store: str, url: str) -> bool:
     if any(x in u for x in ["/cart", "/account", "/signin", "/login", "/terms", "/privacy", "onetrust.com"]):
         return False
     if store == "kroger":
-        # Kroger product detail pages are typically /p/<name>/<id>
-        return ("/p/" in u) and ("kroger.com" in u or u.startswith("/"))
+        # Kroger product detail pages are commonly /p/<name>/<id> but we also see
+        # search-result links under /products/... depending on site experiments.
+        return (("/p/" in u) or ("/products/" in u)) and ("kroger.com" in u or u.startswith("/"))
     if store == "walmart":
         # Walmart product pages are typically /ip/<name>/<id>
         return ("/ip/" in u) and ("walmart.com" in u or u.startswith("/"))
@@ -1192,10 +1193,10 @@ def scrape_kroger_product(search_term, limit=20):
                 continue
         
         # Strategy 2: Look for product links with various patterns
-        # IMPORTANT: Kroger pages include many non-product links (terms, coupons, cart, etc.).
-        # Prefer the canonical product page pattern.
+        # NOTE: Kroger sometimes uses /products/... in search results; include both.
         product_link_patterns = [
             r'/p/',
+            r'/products/',
         ]
         
         all_product_links = []
@@ -1575,7 +1576,16 @@ def search_products():
     if cache_key in product_cache:
         cache_time = cache_expiry.get(cache_key)
         if cache_time and datetime.now() < cache_time:
-            return jsonify({'products': product_cache[cache_key]})
+            cached = product_cache[cache_key]
+            # Backward-compat: older cache entries may be just a list of products.
+            if isinstance(cached, list):
+                return jsonify({
+                    'products': cached,
+                    'total_found': len(cached),
+                    'filtered_count': len(cached),
+                    'store': store
+                })
+            return jsonify(cached)
     
     # Scrape products based on selected store
     try:
@@ -1622,15 +1632,15 @@ def search_products():
             filtered_products.append(product)
     
     # Cache results for 5 minutes
-    product_cache[cache_key] = filtered_products
-    cache_expiry[cache_key] = datetime.now() + timedelta(minutes=5)
-    
-    return jsonify({
+    product_cache[cache_key] = {
         'products': filtered_products,
         'total_found': len(products),
         'filtered_count': len(filtered_products),
         'store': store
-    })
+    }
+    cache_expiry[cache_key] = datetime.now() + timedelta(minutes=5)
+    
+    return jsonify(product_cache[cache_key])
 
 @app.route('/api/filters', methods=['GET'])
 def get_filters():
