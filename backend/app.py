@@ -145,14 +145,10 @@ def create_selenium_driver():
         raise Exception("Selenium is not installed. Run: pip install selenium webdriver-manager")
     
     firefox_options = FirefoxOptions()
-    # Try non-headless first (better for bypassing bot protection)
-    # But if DISPLAY is not set, use headless mode
-    use_headless = os.environ.get('DISPLAY') is None
-    if use_headless:
-        firefox_options.add_argument('--headless')
-        print("Using headless mode (no DISPLAY detected)")
-    else:
-        print("Using non-headless mode (better for bypassing bot protection)")
+    # Always use headless mode to avoid opening visible browser windows
+    # Headless is required for server environments
+    firefox_options.add_argument('--headless')
+    print("Using headless mode")
     
     # Stealth options to avoid detection
     firefox_options.set_preference("dom.webdriver.enabled", False)
