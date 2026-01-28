@@ -26,7 +26,7 @@ function App() {
     }
   };
 
-  const handleSearch = async (searchTerm) => {
+  const handleSearch = async (searchTerm, store = 'kroger') => {
     if (!searchTerm.trim()) return;
 
     setLoading(true);
@@ -38,7 +38,8 @@ function App() {
         },
         body: JSON.stringify({
           query: searchTerm,
-          user_id: 'default'
+          user_id: 'default',
+          store: store
         }),
       });
 
