@@ -145,22 +145,28 @@ def create_selenium_driver():
         raise Exception("Selenium is not installed. Run: pip install selenium webdriver-manager")
     
     firefox_options = FirefoxOptions()
-    # Headless mode
-    firefox_options.add_argument('--headless')
+    # Try non-headless first (better for bypassing bot protection)
+    # If headless is needed, we can add it back, but non-headless works better with Incapsula
+    # firefox_options.add_argument('--headless')
     
     # Stealth options to avoid detection
     firefox_options.set_preference("dom.webdriver.enabled", False)
     firefox_options.set_preference("useAutomationExtension", False)
     
-    # Realistic user agent
+    # Realistic user agent (use a more common one)
     firefox_options.set_preference("general.useragent.override", 
-        "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0")
+        "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0")
     
     # Accept language
     firefox_options.set_preference("intl.accept_languages", "en-US,en")
     
     # Window size
     firefox_options.set_preference("browser.window.size", "1920,1080")
+    
+    # Additional stealth preferences
+    firefox_options.set_preference("privacy.trackingprotection.enabled", False)
+    firefox_options.set_preference("media.navigator.permission.disabled", True)
+    firefox_options.set_preference("dom.push.enabled", False)
     
     # Try to find Firefox or LibreWolf binary
     firefox_binary_paths = [
@@ -235,8 +241,27 @@ def scrape_heb_product_selenium(search_term, limit=20):
         
         check_timeout()
         
-        # Wait for page to load and bypass any initial checks (reduced time)
-        time.sleep(1.5)  # Reduced from 3 to 1.5 seconds
+        # Wait for page to load and bypass Incapsula challenge
+        # Incapsula may need more time to verify
+        time.sleep(3)  # Increased wait for Incapsula challenge
+        
+        # Check if we're blocked by Incapsula
+        page_source_check = driver.page_source
+        if 'Incapsula' in page_source_check[:1000]:
+            print("Detected Incapsula challenge, waiting for it to complete...")
+            # Wait longer and try to interact with page
+            time.sleep(5)
+            check_timeout()
+            
+            # Try scrolling to trigger any lazy loading or verification
+            try:
+                driver.execute_script("window.scrollTo(0, 100);")
+                time.sleep(1)
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(2)
+            except:
+                pass
+        
         check_timeout()
         
         # Try to wait for product elements with multiple strategies
@@ -270,7 +295,32 @@ def scrape_heb_product_selenium(search_term, limit=20):
         
         # Parse page source for product links (primary method - faster)
         check_timeout()
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        
+        # Get page source and check if we're blocked
+        page_source = driver.page_source
+        print(f"Page source length: {len(page_source)} characters")
+        
+        # Check if page loaded properly (not just Incapsula block page)
+        if len(page_source) < 1000 or 'Incapsula' in page_source[:500]:
+            print("Warning: Page may be blocked by Incapsula. Waiting longer and retrying...")
+            # Wait longer for Incapsula challenge to complete
+            time.sleep(5)
+            check_timeout()
+            page_source = driver.page_source
+            print(f"After wait, page source length: {len(page_source)} characters")
+            
+            # Check again
+            if 'Incapsula' in page_source[:1000]:
+                print("ERROR: Still blocked by Incapsula. Page may require manual verification.")
+                # Try scrolling to trigger any lazy loading
+                try:
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+                    time.sleep(2)
+                    page_source = driver.page_source
+                except:
+                    pass
+        
+        soup = BeautifulSoup(page_source, 'html.parser')
         
         # Look for product links - HEB uses various patterns
         product_link_patterns = [
