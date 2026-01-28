@@ -145,10 +145,13 @@ def create_selenium_driver():
         raise Exception("Selenium is not installed. Run: pip install selenium webdriver-manager")
     
     firefox_options = FirefoxOptions()
-    # Always use headless mode to avoid opening visible browser windows
-    # Headless is required for server environments
-    firefox_options.add_argument('--headless')
-    print("Using headless mode")
+    # Headless by default; allow opting out for manual CAPTCHA solving/debugging.
+    headless = os.getenv("HEADLESS", "true").lower() in ("1", "true", "yes", "y")
+    if headless:
+        firefox_options.add_argument('--headless')
+        print("Using headless mode")
+    else:
+        print("Using visible browser mode (HEADLESS=false)")
     
     # Stealth options to avoid detection
     firefox_options.set_preference("dom.webdriver.enabled", False)
@@ -1161,6 +1164,12 @@ def scrape_kroger_product(search_term, limit=20):
         # Parse page source
         page_source = driver.page_source
         print(f"Page source length: {len(page_source)} characters")
+        if "Access Denied" in page_source or "errors.edgesuite.net" in page_source:
+            raise Exception(
+                "Kroger blocked automated access (Akamai 'Access Denied'). "
+                "This can happen in headless mode or from restricted networks. "
+                "Try setting HEADLESS=false to solve any challenge manually, or try again from a different network."
+            )
         soup = BeautifulSoup(page_source, 'html.parser')
         products = []
         
@@ -1168,7 +1177,10 @@ def scrape_kroger_product(search_term, limit=20):
         script_tags = soup.find_all('script', type=re.compile(r'application/json|application/ld\+json'))
         for script in script_tags:
             try:
-                data = json.loads(script.string)
+                blob = (script.string or script.get_text() or "").strip()
+                if not blob or blob[0] not in "{[":
+                    continue
+                data = json.loads(blob)
                 if isinstance(data, dict):
                     # Look for product lists
                     items = data.get('itemListElement', data.get('@graph', []))
@@ -1190,6 +1202,82 @@ def scrape_kroger_product(search_term, limit=20):
                                         products.append(product)
                                         print(f"Found product from JSON-LD: {name[:50]}...")
             except (json.JSONDecodeError, AttributeError):
+                continue
+
+        # Strategy 1b (fallback): Parse embedded JSON blobs that contain product objects.
+        # Kroger often embeds data containing fields like upc/description/seoUrl without JSON-LD.
+        def _walk(obj):
+            if isinstance(obj, dict):
+                yield obj
+                for v in obj.values():
+                    yield from _walk(v)
+            elif isinstance(obj, list):
+                for it in obj:
+                    yield from _walk(it)
+
+        def _product_from_obj(o):
+            if not isinstance(o, dict):
+                return None
+            name = o.get("description") or o.get("name") or ""
+            url = o.get("seoUrl") or o.get("url") or o.get("@id") or ""
+            upc = o.get("upc") or o.get("productId") or o.get("id") or ""
+            if not name or not url:
+                return None
+            # Require at least one Kroger-ish identifier to reduce false positives.
+            if not upc and "/p/" not in str(url) and "/products/" not in str(url):
+                return None
+            if not _looks_like_product_url("kroger", str(url)):
+                return None
+
+            price = "N/A"
+            try:
+                items = o.get("items")
+                if isinstance(items, list) and items:
+                    price_val = items[0].get("price") if isinstance(items[0], dict) else None
+                    if price_val:
+                        price = f"${price_val}" if isinstance(price_val, (int, float)) else str(price_val)
+            except Exception:
+                pass
+
+            image = ""
+            try:
+                imgs = o.get("images") or o.get("image")
+                if isinstance(imgs, list) and imgs:
+                    if isinstance(imgs[0], dict):
+                        image = imgs[0].get("url") or imgs[0].get("sizes", {}).get("medium", "")
+                    elif isinstance(imgs[0], str):
+                        image = imgs[0]
+                elif isinstance(imgs, str):
+                    image = imgs
+            except Exception:
+                pass
+
+            if isinstance(url, str) and not url.startswith("http"):
+                url = "https://www.kroger.com" + url
+            return {
+                "name": str(name)[:200],
+                "price": price,
+                "url": url,
+                "image": image,
+                "ingredients": "",
+                "store": "Kroger",
+            }
+
+        for script in script_tags:
+            try:
+                blob = (script.string or script.get_text() or "").strip()
+                if not blob or ("\"upc\"" not in blob and "\"seoUrl\"" not in blob and "\"description\"" not in blob):
+                    continue
+                if blob[0] not in "{[":
+                    continue
+                data = json.loads(blob)
+                for o in _walk(data):
+                    prod = _product_from_obj(o)
+                    if prod and not any(p["url"] == prod["url"] for p in products):
+                        products.append(prod)
+                        if len(products) >= limit:
+                            break
+            except Exception:
                 continue
         
         # Strategy 2: Look for product links with various patterns
@@ -1230,7 +1318,7 @@ def scrape_kroger_product(search_term, limit=20):
         
         for container in product_containers[:limit*2]:
             try:
-                link = container.find('a', href=True)
+                link = container.find('a', href=re.compile(r'/p/|/products/', re.I))
                 if link:
                     all_product_links.append(link)
             except:
@@ -1378,6 +1466,11 @@ def scrape_walmart_product(search_term, limit=20):
         # Parse page source
         page_source = driver.page_source
         print(f"Page source length: {len(page_source)} characters")
+        if "Robot or human?" in page_source or "blocked" in page_source.lower():
+            raise Exception(
+                "Walmart blocked automated access ('Robot or human?'). "
+                "Try setting HEADLESS=false to solve the challenge manually, or try again from a different network."
+            )
         soup = BeautifulSoup(page_source, 'html.parser')
         products = []
         
