@@ -111,9 +111,11 @@ def _kroger_get_access_token() -> str:
     if _KROGER_TOKEN and _KROGER_TOKEN_EXPIRY and datetime.now() < (_KROGER_TOKEN_EXPIRY - timedelta(seconds=30)):
         return _KROGER_TOKEN
 
+    kroger_scope = os.getenv("KROGER_SCOPE", "product.compact").strip() or "product.compact"
+
     resp = requests.post(
         token_url,
-        data={"grant_type": "client_credentials", "scope": "product.compact"},
+        data={"grant_type": "client_credentials", "scope": kroger_scope},
         auth=(client_id, client_secret),
         timeout=15,
     )
@@ -159,6 +161,25 @@ def kroger_api_product_search(search_term: str, limit: int = 20):
         params=params,
         timeout=20,
     )
+    if resp.status_code == 403:
+        # Catalog v2 may require different scopes depending on your app's permissions.
+        # Fall back to the legacy v1 Products endpoint which works with `product.compact`
+        # for many developer apps.
+        try:
+            err = resp.json()
+        except Exception:
+            err = {}
+        if isinstance(err, dict) and err.get("error") == "insufficient_scope":
+            legacy_base = os.getenv("KROGER_LEGACY_API_BASE_URL", "https://api.kroger.com/v1").rstrip("/")
+            legacy_path = os.getenv("KROGER_LEGACY_PRODUCTS_PATH", "/products").strip()
+            if not legacy_path.startswith("/"):
+                legacy_path = "/" + legacy_path
+            resp = requests.get(
+                f"{legacy_base}{legacy_path}",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                params=params,
+                timeout=20,
+            )
     if resp.status_code >= 400:
         raise Exception(f"Kroger product search failed ({resp.status_code}): {resp.text[:300]}")
 

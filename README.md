@@ -98,6 +98,12 @@ KROGER_LOCATION_ID=your_location_id
 # KROGER_TOKEN_URL=https://api.kroger.com/v1/connect/oauth2/token
 # KROGER_API_BASE_URL=https://api.kroger.com
 # KROGER_PRODUCTS_PATH=/catalog/v2/products
+# OAuth scopes (defaults to product.compact)
+# KROGER_SCOPE=product.compact
+
+# If Catalog v2 returns insufficient_scope, the backend will fall back to legacy v1:
+# KROGER_LEGACY_API_BASE_URL=https://api.kroger.com/v1
+# KROGER_LEGACY_PRODUCTS_PATH=/products
 
 # Optional: allow visible browser for debugging challenges (default is headless)
 HEADLESS=true
