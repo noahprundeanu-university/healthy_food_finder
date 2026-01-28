@@ -146,8 +146,13 @@ def create_selenium_driver():
     
     firefox_options = FirefoxOptions()
     # Try non-headless first (better for bypassing bot protection)
-    # If headless is needed, we can add it back, but non-headless works better with Incapsula
-    # firefox_options.add_argument('--headless')
+    # But if DISPLAY is not set, use headless mode
+    use_headless = os.environ.get('DISPLAY') is None
+    if use_headless:
+        firefox_options.add_argument('--headless')
+        print("Using headless mode (no DISPLAY detected)")
+    else:
+        print("Using non-headless mode (better for bypassing bot protection)")
     
     # Stealth options to avoid detection
     firefox_options.set_preference("dom.webdriver.enabled", False)
@@ -345,6 +350,32 @@ def scrape_heb_product_selenium(search_term, limit=20):
                 unique_links.append(link)
         
         print(f"Found {len(unique_links)} unique product links in page source")
+        
+        # If no links found and page seems blocked, try alternative extraction
+        if len(unique_links) == 0:
+            print("No product links found. Trying alternative extraction methods...")
+            # Try to find any links that might be products
+            all_links = soup.find_all('a', href=True)
+            print(f"Total links on page: {len(all_links)}")
+            
+            # Look for links with product-like characteristics
+            for link in all_links[:100]:
+                href = link.get('href', '')
+                link_text = link.get_text(strip=True)
+                
+                # Skip obvious non-product links
+                if any(skip in href.lower() for skip in ['/cart', '/account', '/help', '/store', '/deals', '/recipes', '/categories']):
+                    continue
+                
+                # Look for links that might be products
+                if href and len(href) > 5 and len(link_text) > 5 and len(link_text) < 200:
+                    # Check if it's not just navigation text
+                    if not any(nav in link_text.lower() for nav in ['shop', 'cart', 'account', 'help', 'menu', 'search', 'browse']):
+                        unique_links.append(link)
+                        if len(unique_links) >= limit:
+                            break
+            
+            print(f"Found {len(unique_links)} potential product links via alternative method")
         
         # Extract products from links (with timeout checks)
         for link in unique_links[:limit*2]:
