@@ -1,13 +1,15 @@
 # Healthy Food Finder 🥗
 
-A web application that automatically filters out unhealthy food from grocery store websites. Currently supports HEB (H-E-B).
+A web application that filters out unhealthy food from grocery store search results.
+
+**Important**: Grocery sites aggressively block scraping. This project now supports **official APIs** (recommended) and keeps Selenium scraping only as a fallback.
 
 ## Features
 
 - **Smart Filtering**: Automatically filters out products containing unhealthy ingredients like seed oils, artificial sweeteners, preservatives, etc.
 - **Custom Filters**: Add your own custom filters for ingredients you want to avoid
-- **Product Search**: Search for products at HEB and see only healthy options
-- **Cart Integration**: Easily view products on HEB's website to add them to your cart
+- **Product Search**: Search for products (Kroger API recommended)
+- **Store selector**: Choose Kroger or Walmart in the UI
 
 ## Default Filters
 
@@ -81,10 +83,19 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-5. (Optional) Create a `.env` file in the `backend/` directory:
+5. (Recommended) Create a `.env` file in the `backend/` directory:
 ```bash
 # Use mock data for development/testing
 USE_MOCK_DATA=True
+
+# Prefer official Kroger API (recommended)
+KROGER_CLIENT_ID=your_client_id
+KROGER_CLIENT_SECRET=your_client_secret
+# Optional but recommended for pricing/availability:
+KROGER_LOCATION_ID=your_location_id
+
+# Optional: allow visible browser for debugging challenges (default is headless)
+HEADLESS=true
 ```
 
 6. Run the backend server:
@@ -97,7 +108,7 @@ python app.py
 
 The backend will run on `http://localhost:5000`
 
-**Note**: By default, the backend uses real HEB scraping. To use mock data for testing, set `USE_MOCK_DATA=True` in your `.env` file or environment variables.
+**Note**: By default, the backend will use the **Kroger API** if `KROGER_CLIENT_ID` and `KROGER_CLIENT_SECRET` are set; otherwise it will attempt Selenium scraping (which may be blocked).
 
 ### Frontend Setup
 
@@ -126,7 +137,7 @@ The frontend will run on `http://localhost:3000` and automatically open in your 
 4. Add custom filters for any ingredients you want to avoid
 5. Search for products (e.g., "chicken", "bread", "milk")
 6. View filtered results showing only healthy products
-7. Click "View on HEB" to open the product page on HEB's website
+7. Click "View on Store" to open the product page on the official store site (best-effort)
 
 ## Project Structure
 

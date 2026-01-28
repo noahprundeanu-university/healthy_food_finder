@@ -53,6 +53,10 @@ user_filters = {}
 product_cache = {}
 cache_expiry = {}
 
+# Kroger API token cache (service-to-service OAuth)
+_KROGER_TOKEN = None
+_KROGER_TOKEN_EXPIRY = None
+
 def normalize_text(text):
     """Normalize text for comparison"""
     if not text:
@@ -71,6 +75,139 @@ def check_ingredients(ingredients_text, filters):
             return False  # Contains filtered ingredient
     
     return True  # Passes all filters
+
+
+def _kroger_get_access_token() -> str:
+    """
+    Get Kroger OAuth access token (client credentials).
+    Docs: https://developer.kroger.com/
+    """
+    global _KROGER_TOKEN, _KROGER_TOKEN_EXPIRY
+
+    client_id = os.getenv("KROGER_CLIENT_ID", "").strip()
+    client_secret = os.getenv("KROGER_CLIENT_SECRET", "").strip()
+    token_url = os.getenv("KROGER_TOKEN_URL", "https://api.kroger.com/v1/connect/oauth2/token").strip()
+
+    if not client_id or not client_secret:
+        raise Exception("Missing Kroger API credentials. Set KROGER_CLIENT_ID and KROGER_CLIENT_SECRET.")
+
+    # Return cached token if still valid (with small safety margin)
+    if _KROGER_TOKEN and _KROGER_TOKEN_EXPIRY and datetime.now() < (_KROGER_TOKEN_EXPIRY - timedelta(seconds=30)):
+        return _KROGER_TOKEN
+
+    resp = requests.post(
+        token_url,
+        data={"grant_type": "client_credentials", "scope": "product.compact"},
+        auth=(client_id, client_secret),
+        timeout=15,
+    )
+    if resp.status_code >= 400:
+        raise Exception(f"Kroger token request failed ({resp.status_code}): {resp.text[:300]}")
+
+    data = resp.json()
+    token = data.get("access_token")
+    expires_in = int(data.get("expires_in", 1800))
+    if not token:
+        raise Exception("Kroger token response missing access_token.")
+
+    _KROGER_TOKEN = token
+    _KROGER_TOKEN_EXPIRY = datetime.now() + timedelta(seconds=expires_in)
+    return token
+
+
+def kroger_api_product_search(search_term: str, limit: int = 20):
+    """
+    Search Kroger products via official Products API.
+    https://developer.kroger.com/documentation/api-products/public/products/product-search
+    """
+    token = _kroger_get_access_token()
+    location_id = os.getenv("KROGER_LOCATION_ID", "").strip()
+    base_url = os.getenv("KROGER_API_BASE_URL", "https://api.kroger.com/v1").rstrip("/")
+
+    params = {
+        "filter.term": search_term,
+        "filter.limit": str(min(int(limit), 50)),
+        "filter.start": "0",
+    }
+    if location_id:
+        params["filter.locationId"] = location_id
+
+    resp = requests.get(
+        f"{base_url}/products",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        params=params,
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise Exception(f"Kroger product search failed ({resp.status_code}): {resp.text[:300]}")
+
+    payload = resp.json()
+    items = payload.get("data", []) if isinstance(payload, dict) else []
+
+    out = []
+    for it in items[:limit]:
+        if not isinstance(it, dict):
+            continue
+        desc = it.get("description") or it.get("brand") or "Unknown"
+        pid = it.get("productId") or it.get("upc") or ""
+        # API doesn't always return a public web URL; build a best-effort one for "View on store"
+        web_url = f"https://www.kroger.com/p/{pid}" if pid else ""
+        price = "N/A"
+        try:
+            items0 = it.get("items")
+            if isinstance(items0, list) and items0:
+                price_obj = items0[0].get("price") if isinstance(items0[0], dict) else None
+                if isinstance(price_obj, dict):
+                    regular = price_obj.get("regular")
+                    if regular is not None:
+                        price = f"${regular}"
+        except Exception:
+            pass
+
+        image = ""
+        try:
+            imgs = it.get("images")
+            if isinstance(imgs, list) and imgs:
+                sizes = imgs[0].get("sizes") if isinstance(imgs[0], dict) else None
+                if isinstance(sizes, list) and sizes:
+                    image = sizes[-1].get("url", "") if isinstance(sizes[-1], dict) else ""
+        except Exception:
+            pass
+
+        out.append(
+            {
+                "name": str(desc)[:200],
+                "price": price,
+                "url": web_url,
+                "image": image,
+                "ingredients": "",
+                "store": "Kroger",
+            }
+        )
+    return out
+
+
+def walmart_api_product_search(search_term: str, limit: int = 20):
+    """
+    Walmart's public product search APIs have changed over time and are not always available
+    to general developers. This project supports a Walmart API integration when credentials
+    and endpoint are provided via env vars.
+    """
+    api_url = os.getenv("WALMART_API_SEARCH_URL", "").strip()
+    api_key = os.getenv("WALMART_API_KEY", "").strip()
+    if not api_url or not api_key:
+        raise Exception(
+            "Walmart API is not configured. Set WALMART_API_SEARCH_URL and WALMART_API_KEY (or use Kroger API)."
+        )
+
+    # Generic implementation for user-specified endpoint.
+    # Expected response should be mapped in a future iteration once you choose the provider.
+    resp = requests.get(api_url, headers={"Authorization": api_key}, params={"q": search_term, "limit": limit}, timeout=20)
+    if resp.status_code >= 400:
+        raise Exception(f"Walmart API search failed ({resp.status_code}): {resp.text[:300]}")
+    data = resp.json()
+    # Provider-specific mapping needed
+    return []
 
 def get_mock_products(search_term, limit=20):
     """Generate mock products for testing"""
@@ -1680,12 +1817,18 @@ def search_products():
                 })
             return jsonify(cached)
     
-    # Scrape products based on selected store
+    # Prefer official APIs when configured; fall back to Selenium scraping otherwise.
     try:
         if store == 'kroger':
-            products = scrape_kroger_product(search_term)
+            if os.getenv("KROGER_CLIENT_ID") and os.getenv("KROGER_CLIENT_SECRET"):
+                products = kroger_api_product_search(search_term)
+            else:
+                products = scrape_kroger_product(search_term)
         elif store == 'walmart':
-            products = scrape_walmart_product(search_term)
+            if os.getenv("WALMART_API_SEARCH_URL") and os.getenv("WALMART_API_KEY"):
+                products = walmart_api_product_search(search_term)
+            else:
+                products = scrape_walmart_product(search_term)
         else:
             return jsonify({'error': f'Unknown store: {store}. Supported stores: kroger, walmart'}), 400
     except TimeoutError:
