@@ -921,85 +921,109 @@ def scrape_heb_product(search_term, limit=20):
         return []
 
 def get_product_details(product_url):
-    """Fetch detailed product information including ingredients"""
+    """Fetch detailed product information including ingredients using Selenium"""
     if not product_url or not product_url.startswith('http'):
         return None
-        
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-        }
-        
-        response = requests.get(product_url, headers=headers, timeout=10)
-        if response.status_code != 200:
+    
+    if not SELENIUM_AVAILABLE:
+        # Fallback to requests if Selenium not available (will likely fail due to bot protection)
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+            }
+            response = requests.get(product_url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                return None
+            soup = BeautifulSoup(response.content, 'html.parser')
+        except:
             return None
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        ingredients_text = ""
-        
-        # Strategy 1: Look for structured data (JSON-LD)
+    else:
+        # Use Selenium to fetch product page (bypasses bot protection)
+        driver = None
+        try:
+            driver = create_selenium_driver()
+            driver.set_page_load_timeout(10)  # 10 second timeout for ingredient pages
+            driver.implicitly_wait(2)
+            
+            print(f"Fetching ingredients from: {product_url}")
+            driver.get(product_url)
+            
+            # Wait a moment for page to load
+            import time
+            time.sleep(1.5)
+            
+            # Get page source and parse
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+        except Exception as e:
+            print(f"Error loading product page {product_url}: {e}")
+            return None
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+    
+    # Now parse ingredients from the page
+    ingredients_text = ""
+    
+    # Strategy 1: Look for HEB's specific ingredients structure
+    # <div class="sc-578c3839-3 frvaxi"><h4>Ingredients</h4><span>...</span></div>
+    ingredients_div = soup.find('div', class_=re.compile(r'sc-578c3839-3|frvaxi', re.I))
+    if ingredients_div:
+        # Look for h4 with "Ingredients" text
+        h4 = ingredients_div.find('h4', string=re.compile(r'ingredients?', re.I))
+        if h4:
+            # Find the span with actual ingredients
+            span = ingredients_div.find('span')
+            if span:
+                ingredients_text = span.get_text(strip=True)
+                print(f"Found ingredients using HEB structure: {ingredients_text[:100]}...")
+    
+    # Strategy 2: Look for any div containing "Ingredients" heading
+    if not ingredients_text:
+        ingredients_heading = soup.find(['h4', 'h3', 'h2'], string=re.compile(r'ingredients?', re.I))
+        if ingredients_heading:
+            # Look in parent or next sibling
+            parent = ingredients_heading.parent
+            if parent:
+                # Try to find span or div with ingredients text
+                ingredients_elem = parent.find(['span', 'div', 'p'])
+                if ingredients_elem:
+                    ingredients_text = ingredients_elem.get_text(strip=True)
+    
+    # Strategy 3: Look for structured data (JSON-LD)
+    if not ingredients_text:
         script_tags = soup.find_all('script', type=re.compile(r'application/json|application/ld\+json'))
         for script in script_tags:
             try:
                 data = json.loads(script.string)
                 if isinstance(data, dict):
-                    # Try common structured data fields
                     ingredients = data.get('ingredients', data.get('nutrition', {}).get('ingredients', ''))
                     if ingredients:
                         ingredients_text = ingredients if isinstance(ingredients, str) else ', '.join(ingredients) if isinstance(ingredients, list) else str(ingredients)
                         break
             except (json.JSONDecodeError, AttributeError):
                 continue
-        
-        # Strategy 2: Look for ingredients in HTML with various selectors
-        if not ingredients_text:
-            # Try multiple patterns
-            patterns = [
-                # Look for "Ingredients:" label
-                soup.find(string=re.compile(r'ingredients?:', re.I)),
-                # Look for common ingredient section classes
-                soup.find('div', class_=re.compile(r'ingredient', re.I)),
-                soup.find('section', class_=re.compile(r'ingredient', re.I)),
-                soup.find('div', id=re.compile(r'ingredient', re.I)),
-                # Look in product details
-                soup.find('div', class_=re.compile(r'product-detail|product-info', re.I)),
-            ]
-            
-            for pattern in patterns:
-                if pattern:
-                    # Get the parent element and find text
-                    parent = pattern if hasattr(pattern, 'find') else pattern.parent
-                    if parent:
-                        # Look for text in the same or next element
-                        text_elem = parent.find_next(['p', 'div', 'span', 'li'])
-                        if text_elem:
-                            ingredients_text = text_elem.get_text(strip=True)
-                            if ingredients_text and len(ingredients_text) > 10:
-                                break
-        
-        # Strategy 3: Look for nutrition facts table (often contains ingredients)
-        if not ingredients_text:
-            nutrition_table = soup.find('table', class_=re.compile(r'nutrition', re.I))
-            if nutrition_table:
-                rows = nutrition_table.find_all('tr')
-                for row in rows:
-                    cells = row.find_all(['td', 'th'])
-                    for i, cell in enumerate(cells):
-                        if 'ingredient' in cell.get_text().lower():
-                            if i + 1 < len(cells):
-                                ingredients_text = cells[i + 1].get_text(strip=True)
-                                break
-                    if ingredients_text:
-                        break
-        
-        return {
-            'ingredients': ingredients_text.strip() if ingredients_text else ""
-        }
-    except Exception as e:
-        print(f"Error fetching product details from {product_url}: {e}")
-        return None
+    
+    # Strategy 4: Generic search for ingredients section
+    if not ingredients_text:
+        # Look for any div with class containing "ingredient"
+        ingredient_divs = soup.find_all('div', class_=re.compile(r'ingredient', re.I))
+        for div in ingredient_divs:
+            text = div.get_text(strip=True)
+            if 'ingredient' in text.lower() and len(text) > 20:
+                # Extract text after "Ingredients" label
+                parts = re.split(r'ingredients?:?\s*', text, flags=re.I)
+                if len(parts) > 1:
+                    ingredients_text = parts[1].strip()
+                    break
+    
+    return {
+        'ingredients': ingredients_text.strip() if ingredients_text else ""
+    }
 
 @app.route('/api/health', methods=['GET'])
 def health():
