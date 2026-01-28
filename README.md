@@ -9,7 +9,7 @@ A web application that filters out unhealthy food from grocery store search resu
 - **Smart Filtering**: Automatically filters out products containing unhealthy ingredients like seed oils, artificial sweeteners, preservatives, etc.
 - **Custom Filters**: Add your own custom filters for ingredients you want to avoid
 - **Product Search**: Search for products (Kroger API recommended)
-- **Store selector**: Choose Kroger or Walmart in the UI
+- **Store selector**: Choose Kroger in the UI
 
 ## Default Filters
 

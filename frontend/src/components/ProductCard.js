@@ -20,7 +20,7 @@ function ProductCard({ product }) {
       const data = await response.json();
       
       if (data.success && product.url) {
-        // Open HEB product page in new tab so user can add to cart
+        // Open Kroger product page in new tab so user can add to cart
         window.open(product.url, '_blank');
       }
     } catch (error) {
@@ -54,7 +54,7 @@ function ProductCard({ product }) {
               onClick={handleAddToCart}
               disabled={addingToCart}
             >
-              {addingToCart ? 'Opening...' : 'View on HEB'}
+              {addingToCart ? 'Opening...' : 'View on Kroger'}
             </button>
           )}
         </div>

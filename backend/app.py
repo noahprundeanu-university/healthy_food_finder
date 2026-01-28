@@ -229,27 +229,6 @@ def kroger_api_product_search(search_term: str, limit: int = 20):
     return out
 
 
-def walmart_api_product_search(search_term: str, limit: int = 20):
-    """
-    Walmart's public product search APIs have changed over time and are not always available
-    to general developers. This project supports a Walmart API integration when credentials
-    and endpoint are provided via env vars.
-    """
-    api_url = os.getenv("WALMART_API_SEARCH_URL", "").strip()
-    api_key = os.getenv("WALMART_API_KEY", "").strip()
-    if not api_url or not api_key:
-        raise Exception(
-            "Walmart API is not configured. Set WALMART_API_SEARCH_URL and WALMART_API_KEY (or use Kroger API)."
-        )
-
-    # Generic implementation for user-specified endpoint.
-    # Expected response should be mapped in a future iteration once you choose the provider.
-    resp = requests.get(api_url, headers={"Authorization": api_key}, params={"q": search_term, "limit": limit}, timeout=20)
-    if resp.status_code >= 400:
-        raise Exception(f"Walmart API search failed ({resp.status_code}): {resp.text[:300]}")
-    data = resp.json()
-    # Provider-specific mapping needed
-    return []
 
 def get_mock_products(search_term, limit=20):
     """Generate mock products for testing"""
@@ -406,9 +385,6 @@ def _looks_like_product_url(store: str, url: str) -> bool:
         # Kroger product detail pages are commonly /p/<name>/<id> but we also see
         # search-result links under /products/... depending on site experiments.
         return (("/p/" in u) or ("/products/" in u)) and ("kroger.com" in u or u.startswith("/"))
-    if store == "walmart":
-        # Walmart product pages are typically /ip/<name>/<id>
-        return ("/ip/" in u) and ("walmart.com" in u or u.startswith("/"))
     return True
 
 def scrape_heb_product_selenium(search_term, limit=20):
@@ -1606,227 +1582,6 @@ def scrape_kroger_product(search_term, limit=20):
             except:
                 pass
 
-def scrape_walmart_product(search_term, limit=20):
-    """Scrape Walmart website for products using Selenium"""
-    if USE_MOCK_DATA:
-        return get_mock_products(search_term, limit)
-    
-    if not SELENIUM_AVAILABLE:
-        print("ERROR: Selenium not available. Install with: pip install selenium webdriver-manager")
-        return []
-    
-    driver = None
-    import time
-    start_time = time.time()
-    max_total_time = 25
-    
-    try:
-        driver = create_selenium_driver()
-        driver.set_page_load_timeout(15)
-        driver.implicitly_wait(3)
-        
-        # Walmart search URL
-        search_url = f"https://www.walmart.com/search?q={search_term.replace(' ', '+')}"
-        
-        print(f"Loading Walmart search page: {search_url}")
-        try:
-            driver.get(search_url)
-        except Exception as e:
-            print(f"Page load timeout or error: {e}")
-        
-        # Wait for page to load and scroll to trigger lazy loading
-        time.sleep(3)
-        try:
-            driver.execute_script("window.scrollTo(0, 500);")
-            time.sleep(1)
-        except:
-            pass
-        
-        # Parse page source
-        page_source = driver.page_source
-        print(f"Page source length: {len(page_source)} characters")
-        if "Robot or human?" in page_source or "blocked" in page_source.lower():
-            raise Exception(
-                "Walmart blocked automated access ('Robot or human?'). "
-                "Try setting HEADLESS=false to solve the challenge manually, or try again from a different network."
-            )
-        soup = BeautifulSoup(page_source, 'html.parser')
-        products = []
-        
-        # Strategy 1: Look for JSON-LD structured data
-        script_tags = soup.find_all('script', type=re.compile(r'application/json|application/ld\+json'))
-        for script in script_tags:
-            try:
-                data = json.loads(script.string)
-                if isinstance(data, dict):
-                    # Look for product lists
-                    items = data.get('itemListElement', data.get('@graph', data.get('products', [])))
-                    if isinstance(items, list):
-                        for item in items[:limit*2]:
-                            if isinstance(item, dict):
-                                name = item.get('name', '')
-                                url = item.get('url', item.get('@id', ''))
-                                if name and url:
-                                    product = {
-                                        'name': name[:200],
-                                        'price': item.get('offers', {}).get('price', 'N/A') if isinstance(item.get('offers'), dict) else 'N/A',
-                                        'url': url if url.startswith('http') else 'https://www.walmart.com' + url,
-                                        'image': item.get('image', ''),
-                                        'ingredients': '',
-                                        'store': 'Walmart'
-                                    }
-                                    if not any(p['url'] == product['url'] for p in products):
-                                        products.append(product)
-                                        print(f"Found product from JSON-LD: {name[:50]}...")
-            except (json.JSONDecodeError, AttributeError):
-                continue
-        
-        # Strategy 2: Look for product links with various patterns
-        # IMPORTANT: Prefer canonical Walmart product page patterns.
-        product_link_patterns = [
-            r'/ip/',
-            r'/grocery/ip/',
-        ]
-        
-        all_product_links = []
-        for pattern in product_link_patterns:
-            links = soup.find_all('a', href=re.compile(pattern, re.I))
-            all_product_links.extend(links)
-            if links:
-                print(f"Found {len(links)} links matching pattern: {pattern}")
-        
-        # Strategy 3: Look for product containers
-        product_containers = []
-        # Try containers with data-testid
-        containers_with_testid = soup.find_all(['div', 'article', 'li'], 
-                                              attrs={'data-testid': re.compile(r'product|item', re.I)})
-        product_containers.extend(containers_with_testid)
-        # Try containers with product/item classes
-        containers_with_class = soup.find_all(['div', 'article', 'li'], 
-                                             class_=re.compile(r'product|item', re.I))
-        product_containers.extend(containers_with_class)
-        # Remove duplicates
-        seen_containers = set()
-        unique_containers = []
-        for container in product_containers:
-            container_id = id(container)
-            if container_id not in seen_containers:
-                seen_containers.add(container_id)
-                unique_containers.append(container)
-        product_containers = unique_containers
-        print(f"Found {len(product_containers)} product containers")
-        
-        for container in product_containers[:limit*2]:
-            try:
-                link = container.find('a', href=True)
-                if link:
-                    all_product_links.append(link)
-            except:
-                pass
-        
-        # Remove duplicates
-        seen_urls = set()
-        unique_links = []
-        for link in all_product_links:
-            href = link.get('href', '')
-            if href and href not in seen_urls:
-                seen_urls.add(href)
-                unique_links.append(link)
-        
-        print(f"Found {len(unique_links)} unique product links from Walmart")
-        
-        # Extract products from links
-        for link in unique_links[:limit*2]:
-            if time.time() - start_time > max_total_time:
-                break
-            try:
-                url = link.get('href', '')
-                if not url:
-                    continue
-                if not _looks_like_product_url("walmart", url):
-                    continue
-                if not url.startswith('http'):
-                    url = 'https://www.walmart.com' + url
-                if not _looks_like_product_url("walmart", url):
-                    continue
-                
-                name = link.get_text(strip=True)
-                if not name or len(name) < 3:
-                    # Try to find name in parent elements
-                    parent = link.parent
-                    for _ in range(3):
-                        if parent:
-                            name_elem = parent.find(['h1', 'h2', 'h3', 'h4', 'span', 'div'], 
-                                                   class_=re.compile(r'name|title|product', re.I))
-                            if name_elem:
-                                name = name_elem.get_text(strip=True)
-                                if name and len(name) > 3:
-                                    break
-                            parent = parent.parent if hasattr(parent, 'parent') else None
-                
-                if not name or len(name) < 3:
-                    continue
-                
-                # Find price
-                price = 'N/A'
-                try:
-                    container = link.find_parent(['article', 'div', 'li'])
-                    if container:
-                        price_text = container.get_text()
-                        price_match = re.search(r'\$[\d,]+\.?\d{0,2}', price_text)
-                        if price_match:
-                            price = price_match.group(0)
-                except:
-                    pass
-                
-                # Find image
-                image = ''
-                try:
-                    img = link.find('img')
-                    if not img:
-                        container = link.find_parent(['article', 'div'])
-                        if container:
-                            img = container.find('img')
-                    if img:
-                        image = img.get('src', img.get('data-src', ''))
-                        if image and not image.startswith('http'):
-                            image = 'https://www.walmart.com' + image
-                except:
-                    pass
-                
-                product = {
-                    'name': name[:200],
-                    'price': price,
-                    'url': url,
-                    'image': image,
-                    'ingredients': '',
-                    'store': 'Walmart'
-                }
-                
-                if not any(p['name'].lower() == product['name'].lower() or 
-                          p['url'] == product['url'] for p in products):
-                    products.append(product)
-                    if len(products) >= limit:
-                        break
-            except Exception as e:
-                print(f"Error extracting product from Walmart: {e}")
-                continue
-        
-        print(f"Scraped {len(products)} products from Walmart")
-        return products[:limit]
-        
-    except Exception as e:
-        print(f"Walmart scraping error: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
-
 @app.route('/api/search', methods=['POST'])
 def search_products():
     """Search for products and filter based on user criteria"""
@@ -1866,13 +1621,8 @@ def search_products():
                 products = kroger_api_product_search(search_term)
             else:
                 products = scrape_kroger_product(search_term)
-        elif store == 'walmart':
-            if os.getenv("WALMART_API_SEARCH_URL") and os.getenv("WALMART_API_KEY"):
-                products = walmart_api_product_search(search_term)
-            else:
-                products = scrape_walmart_product(search_term)
         else:
-            return jsonify({'error': f'Unknown store: {store}. Supported stores: kroger, walmart'}), 400
+            return jsonify({'error': f'Unknown store: {store}. Supported stores: kroger'}), 400
     except TimeoutError:
         return jsonify({
             'error': 'Search timed out. Please try again with a different search term.',
@@ -1886,7 +1636,7 @@ def search_products():
         }), 500
     
     # Filter products based on ingredients
-    # NOTE: Kroger/Walmart ingredient extraction is unreliable and very slow if we try to
+    # NOTE: Kroger ingredient extraction is unreliable and very slow if we try to
     # open each product page during search. Also, bad/non-product URLs can slip in.
     # For now: only attempt ingredient fetching when the URL looks like a real product page.
     filtered_products = []

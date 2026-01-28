@@ -117,7 +117,7 @@ function App() {
     <div className="App">
       <header className="App-header">
         <h1>🥗 Healthy Food Finder</h1>
-        <p className="subtitle">Filter out unhealthy ingredients from HEB products</p>
+        <p className="subtitle">Filter out unhealthy ingredients from Kroger products</p>
       </header>
 
       <main className="App-main">
