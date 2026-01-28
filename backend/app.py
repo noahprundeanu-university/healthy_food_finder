@@ -122,7 +122,12 @@ def kroger_api_product_search(search_term: str, limit: int = 20):
     """
     token = _kroger_get_access_token()
     location_id = os.getenv("KROGER_LOCATION_ID", "").strip()
-    base_url = os.getenv("KROGER_API_BASE_URL", "https://api.kroger.com/v1").rstrip("/")
+    # Kroger's newer docs show Catalog API v2:
+    # https://developer.kroger.com/api-products/api/catalog-api-v2#tag/Catalog-V2/paths/~1catalog~1v2~1products/get
+    base_url = os.getenv("KROGER_API_BASE_URL", "https://api.kroger.com").rstrip("/")
+    products_path = os.getenv("KROGER_PRODUCTS_PATH", "/catalog/v2/products").strip()
+    if not products_path.startswith("/"):
+        products_path = "/" + products_path
 
     params = {
         "filter.term": search_term,
@@ -133,7 +138,7 @@ def kroger_api_product_search(search_term: str, limit: int = 20):
         params["filter.locationId"] = location_id
 
     resp = requests.get(
-        f"{base_url}/products",
+        f"{base_url}{products_path}",
         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
         params=params,
         timeout=20,

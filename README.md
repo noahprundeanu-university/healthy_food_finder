@@ -94,6 +94,11 @@ KROGER_CLIENT_SECRET=your_client_secret
 # Optional but recommended for pricing/availability:
 KROGER_LOCATION_ID=your_location_id
 
+# Optional overrides (defaults match Kroger Catalog API v2 docs):
+# KROGER_TOKEN_URL=https://api.kroger.com/v1/connect/oauth2/token
+# KROGER_API_BASE_URL=https://api.kroger.com
+# KROGER_PRODUCTS_PATH=/catalog/v2/products
+
 # Optional: allow visible browser for debugging challenges (default is headless)
 HEADLESS=true
 ```
