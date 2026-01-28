@@ -1191,10 +1191,26 @@ def scrape_kroger_product(search_term, limit=20):
             if links:
                 print(f"Found {len(links)} links matching pattern: {pattern}")
         
-        # Strategy 3: Look for product containers with data attributes
-        product_containers = soup.find_all(['div', 'article', 'li'], 
-                                          attrs={'data-product-id': True, 'data-sku': True, 
-                                                'class': re.compile(r'product|item', re.I)})
+        # Strategy 3: Look for product containers with data attributes or product classes
+        product_containers = []
+        # Try containers with data attributes
+        containers_with_data = soup.find_all(['div', 'article', 'li'], attrs={'data-product-id': True})
+        product_containers.extend(containers_with_data)
+        containers_with_sku = soup.find_all(['div', 'article', 'li'], attrs={'data-sku': True})
+        product_containers.extend(containers_with_sku)
+        # Try containers with product/item classes
+        containers_with_class = soup.find_all(['div', 'article', 'li'], 
+                                             class_=re.compile(r'product|item', re.I))
+        product_containers.extend(containers_with_class)
+        # Remove duplicates
+        seen_containers = set()
+        unique_containers = []
+        for container in product_containers:
+            container_id = id(container)
+            if container_id not in seen_containers:
+                seen_containers.add(container_id)
+                unique_containers.append(container)
+        product_containers = unique_containers
         print(f"Found {len(product_containers)} product containers")
         
         for container in product_containers[:limit*2]:
@@ -1390,9 +1406,24 @@ def scrape_walmart_product(search_term, limit=20):
                 print(f"Found {len(links)} links matching pattern: {pattern}")
         
         # Strategy 3: Look for product containers
-        product_containers = soup.find_all(['div', 'article', 'li'], 
-                                          attrs={'data-testid': re.compile(r'product|item', re.I),
-                                                'class': re.compile(r'product|item', re.I)})
+        product_containers = []
+        # Try containers with data-testid
+        containers_with_testid = soup.find_all(['div', 'article', 'li'], 
+                                              attrs={'data-testid': re.compile(r'product|item', re.I)})
+        product_containers.extend(containers_with_testid)
+        # Try containers with product/item classes
+        containers_with_class = soup.find_all(['div', 'article', 'li'], 
+                                             class_=re.compile(r'product|item', re.I))
+        product_containers.extend(containers_with_class)
+        # Remove duplicates
+        seen_containers = set()
+        unique_containers = []
+        for container in product_containers:
+            container_id = id(container)
+            if container_id not in seen_containers:
+                seen_containers.add(container_id)
+                unique_containers.append(container)
+        product_containers = unique_containers
         print(f"Found {len(product_containers)} product containers")
         
         for container in product_containers[:limit*2]:
