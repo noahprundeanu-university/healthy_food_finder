@@ -252,6 +252,6 @@ See the deployment section in the codebase for more details.
 - Nutritional information display
 - Price history and alerts
 
-## License
+## Phil Section
 
-MIT
+Uncertain what was wanted to be written here. As per request, everything was done through prompting.
