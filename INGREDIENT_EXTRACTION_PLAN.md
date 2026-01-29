@@ -1,55 +1,23 @@
-# Ingredient Extraction Plan
+# Ingredient Extraction Plan (Historical)
 
-## Current Situation
-- Search results return products with URLs pointing to full product pages
-- Product pages contain ingredients in a specific HEB structure
-- Current `get_product_details()` uses `requests` which fails due to bot protection
-- Ingredients need to be extracted from product pages to filter unhealthy items
+> **Note**: This document is historical. The current implementation uses Kroger's official API and extracts ingredients directly from the API response (`nutritionInformation[0].ingredientStatement`). No web scraping is required.
 
-## Target Structure
-HEB product pages have ingredients in this structure:
-```html
-<div class="sc-578c3839-3 frvaxi">
-  <h4 class="sc-578c3839-2 ksAvle">Ingredients</h4>
-  <span>artisan base dough(bakery flour(...))</span>
-</div>
-```
+## Historical Context
 
-## Solution Plan
+This plan was created when the project attempted to scrape product pages for ingredient information. The current implementation uses Kroger's Catalog API v2, which provides ingredient statements directly in the API response, making this approach obsolete.
 
-### 1. Update `get_product_details()` to use Selenium
-   - Replace `requests.get()` with Selenium WebDriver
-   - Use existing `create_selenium_driver()` function
-   - Set quick timeouts (8-10 seconds) for fast ingredient fetching
-   - Minimal wait times (1-2 seconds) since we only need ingredients
+## Current Implementation
 
-### 2. Target Specific HEB Ingredients Structure
-   - Primary strategy: Look for `<div class="sc-578c3839-3 frvaxi">`
-   - Find `<h4>` with "Ingredients" text
-   - Extract text from `<span>` element within that div
-   - Fallback strategies for other possible structures
+Ingredients are now extracted from the Kroger API response:
+- **Source**: `nutritionInformation[0].ingredientStatement` field in the API response
+- **No scraping required**: All data comes from the official API
+- **Fast and reliable**: No page loads, timeouts, or bot protection issues
 
-### 3. Efficiency Optimizations
-   - Use headless browser mode
-   - Set page load timeout to 8-10 seconds
-   - Minimal implicit waits (1-2 seconds)
-   - Quick sleep after page load (1 second)
-   - Parse page source directly instead of waiting for elements
+## Original Plan (For Reference)
 
-### 4. Error Handling
-   - Gracefully handle timeouts
-   - Return None if ingredients can't be found
-   - Log errors for debugging
-   - Don't block search if ingredient fetching fails
+The original plan involved:
+1. Using Selenium to fetch individual product pages
+2. Parsing HTML to extract ingredient information
+3. Handling bot protection and timeouts
 
-### 5. Integration
-   - Current flow already calls `get_product_details()` for each product
-   - No changes needed to search endpoint
-   - Products without ingredients will pass filter (assumed safe)
-
-## Implementation Steps
-1. Rewrite `get_product_details()` to use Selenium
-2. Add specific HEB structure detection
-3. Add fallback strategies
-4. Test with real HEB product URLs
-5. Commit changes
+This approach was replaced with API integration for better reliability and performance.
