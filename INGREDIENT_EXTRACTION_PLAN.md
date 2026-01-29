@@ -1,23 +1,71 @@
-# Ingredient Extraction Plan (Historical)
+# Ingredient Extraction Plan
 
-> **Note**: This document is historical. The current implementation uses Kroger's official API and extracts ingredients directly from the API response (`nutritionInformation[0].ingredientStatement`). No web scraping is required.
+## Current Implementation ✅
 
-## Historical Context
+Ingredients are now extracted **directly from the Kroger API response**, making searches fast and reliable.
 
-This plan was created when the project attempted to scrape product pages for ingredient information. The current implementation uses Kroger's Catalog API v2, which provides ingredient statements directly in the API response, making this approach obsolete.
+### How It Works
 
-## Current Implementation
+1. **Kroger API Response**: The API returns product data including `nutritionInformation[0].ingredientStatement`
+2. **Direct Extraction**: Ingredients are read from the API payload (no per-product page scraping)
+3. **Filtering**: Products are filtered using a combined text field (name + ingredients + metadata)
+4. **Performance**: Very fast - no additional HTTP requests per product
 
-Ingredients are now extracted from the Kroger API response:
-- **Source**: `nutritionInformation[0].ingredientStatement` field in the API response
-- **No scraping required**: All data comes from the official API
-- **Fast and reliable**: No page loads, timeouts, or bot protection issues
+### API Structure
 
-## Original Plan (For Reference)
+```json
+{
+  "data": [
+    {
+      "productId": "...",
+      "description": "Product name",
+      "nutritionInformation": [
+        {
+          "ingredientStatement": "INGREDIENTS: water, sugar, salt, ..."
+        }
+      ],
+      "productPageURI": "/p/..."
+    }
+  ]
+}
+```
 
-The original plan involved:
-1. Using Selenium to fetch individual product pages
-2. Parsing HTML to extract ingredient information
-3. Handling bot protection and timeouts
+### Filtering Logic
 
-This approach was replaced with API integration for better reliability and performance.
+The application combines multiple fields for robust filtering:
+- Product name
+- `ingredientStatement` (from API)
+- Other relevant metadata
+
+This ensures products are filtered even if ingredient data is incomplete.
+
+## Legacy Approach (Selenium Fallback)
+
+If Kroger API credentials are not configured, the application falls back to Selenium scraping. This approach:
+
+- Uses Selenium WebDriver (Firefox/LibreWolf)
+- Scrapes individual product pages
+- Extracts ingredients from HTML structure
+- **Not recommended** - slower and less reliable
+
+### Selenium Fallback Structure
+
+Kroger product pages have ingredients in various structures. The scraper:
+- Targets common ingredient container patterns
+- Uses multiple fallback strategies
+- Handles timeouts gracefully
+- Returns empty ingredients if extraction fails
+
+## Performance Comparison
+
+| Method | Speed | Reliability | Recommended |
+|--------|-------|------------|-------------|
+| Kroger API | ⚡ Very Fast | ✅ High | ✅ Yes |
+| Selenium Scraping | 🐌 Slow | ⚠️ Low | ❌ No |
+
+## Future Enhancements
+
+- Cache ingredient data per product ID
+- Batch ingredient extraction for multiple products
+- Support additional stores with their own APIs
+- Fallback ingredient sources (nutrition databases)

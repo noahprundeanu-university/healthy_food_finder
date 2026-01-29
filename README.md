@@ -1,21 +1,14 @@
 # Healthy Food Finder 🥗
 
-A web application that filters out unhealthy ingredients from Kroger grocery store products using the official Kroger API.
+A web application that filters out unhealthy food from grocery store search results using the Kroger Products API.
 
 ## Features
 
 - **Smart Filtering**: Automatically filters out products containing unhealthy ingredients like seed oils, artificial sweeteners, preservatives, etc.
 - **Custom Filters**: Add your own custom filters for ingredients you want to avoid
-- **Real Product Data**: Uses Kroger's official Catalog API v2 for reliable product information
-- **Fast Search**: Efficient API-based search with intelligent caching
-- **Product Links**: Direct links to Kroger product pages
-
-## Tech Stack
-
-- **Backend**: Flask (Python) with Gunicorn for production
-- **Frontend**: React with Axios
-- **API**: Kroger Catalog API v2 (OAuth2 Client Credentials)
-- **Deployment**: Render.com (or any Python/Node.js hosting)
+- **Product Search**: Search for products using the official Kroger Products API
+- **Fast Results**: Ingredients extracted directly from API responses (no per-product page scraping)
+- **Cache Management**: Search results are cached and automatically invalidated when filters change
 
 ## Default Filters
 
@@ -89,36 +82,35 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-5. Create a `.env` file in the `backend/` directory:
-```bash
-cd backend
-```
+5. **Set up Kroger API credentials** (required for production, optional for development):
 
-Create `backend/.env` with your Kroger API credentials:
+   Create a `.env` file in the `backend/` directory:
 ```bash
-# Required: Kroger API credentials
-# Get these from https://developer.kroger.com/
+# Kroger API credentials (get from https://developer.kroger.com)
 KROGER_CLIENT_ID=your_client_id
 KROGER_CLIENT_SECRET=your_client_secret
+KROGER_LOCATION_ID=your_location_id  # Optional but recommended for pricing/availability
 
-# Optional but recommended for pricing/availability:
-KROGER_LOCATION_ID=your_location_id
-
-# Optional: OAuth scope (defaults to product.compact)
-# KROGER_SCOPE=product.compact
-
-# Optional: API endpoints (defaults match Kroger Catalog API v2 docs)
+# Optional overrides (defaults match Kroger Catalog API v2 docs):
 # KROGER_TOKEN_URL=https://api.kroger.com/v1/connect/oauth2/token
 # KROGER_API_BASE_URL=https://api.kroger.com
 # KROGER_PRODUCTS_PATH=/catalog/v2/products
+# OAuth scopes (defaults to product.compact)
+# KROGER_SCOPE=product.compact
+
+# Optional: Use mock data for development/testing (no API calls)
+# USE_MOCK_DATA=True
+
+# Optional: allow visible browser for debugging Selenium fallback (default is headless)
+# HEADLESS=true
 ```
 
-**Getting Kroger API Credentials**:
-1. Visit https://developer.kroger.com/
-2. Sign up for a developer account
-3. Create a new application
-4. Copy your `client_id` and `client_secret`
-5. For `KROGER_LOCATION_ID`, use a store location ID from your area (find it in the Kroger app or website)
+   **Getting Kroger API credentials:**
+   1. Sign up at https://developer.kroger.com
+   2. Create a new application
+   3. Get your `client_id` and `client_secret`
+   4. Set the OAuth scope to `product.compact`
+   5. Optionally set a `location_id` for location-specific pricing
 
 6. Run the backend server:
 ```bash
@@ -129,6 +121,8 @@ python app.py
 **Note**: Make sure the virtual environment is activated (you'll see `(venv)` in your prompt). To deactivate later, run `deactivate`.
 
 The backend will run on `http://localhost:5000`
+
+**Note**: By default, the backend will use the **Kroger API** if `KROGER_CLIENT_ID` and `KROGER_CLIENT_SECRET` are set. If not set, it will attempt Selenium scraping as a fallback (which may be blocked by bot protection). For best results, use the official API.
 
 ### Frontend Setup
 
@@ -165,22 +159,20 @@ The frontend will run on `http://localhost:3000` and automatically open in your 
 healthy_food_finder/
 ├── backend/
 │   ├── app.py              # Flask API server
-│   ├── demo_secrets.py     # Optional: demo credentials (not tracked by git)
-│   └── .env                # Environment variables (not tracked by git)
+│   └── demo_secrets.py     # Local-only demo credentials (gitignored)
 ├── frontend/
 │   ├── public/
 │   ├── src/
 │   │   ├── components/     # React components
-│   │   │   ├── FilterManager.js
-│   │   │   ├── ProductCard.js
+│   │   │   ├── SearchBar.js
 │   │   │   ├── ProductList.js
-│   │   │   └── SearchBar.js
+│   │   │   ├── ProductCard.js
+│   │   │   └── FilterManager.js
 │   │   ├── App.js          # Main app component
 │   │   └── index.js        # Entry point
 │   └── package.json
 ├── requirements.txt        # Python dependencies
-├── start.sh                # Quick start script
-├── fix_venv.sh            # Virtual environment fix script
+├── start.sh               # Startup script
 └── README.md
 ```
 
@@ -189,77 +181,75 @@ healthy_food_finder/
 - `GET /api/health` - Health check
 - `POST /api/search` - Search for products
   - Body: `{ "query": "search term", "user_id": "default", "store": "kroger" }`
-  - Returns: `{ "products": [...], "total_found": N, "filtered_count": M }`
+  - Returns: `{ "products": [...], "total_found": N, "filtered_count": M, "store": "kroger" }`
 - `GET /api/filters?user_id=default` - Get user filters
-  - Returns: `{ "filters": [...] }`
 - `POST /api/filters` - Add a filter
   - Body: `{ "filter": "ingredient name", "user_id": "default" }`
-  - Returns: `{ "filters": [...] }`
 - `DELETE /api/filters` - Remove a filter
   - Body: `{ "filter": "ingredient name", "user_id": "default" }`
-  - Returns: `{ "filters": [...] }`
-- `POST /api/cart/add` - Get product URL for cart (placeholder)
+- `POST /api/cart/add` - Add product to cart (placeholder - returns product URL)
   - Body: `{ "product_url": "https://..." }`
-  - Returns: `{ "success": true, "product_url": "..." }`
 
-## How It Works
+## Development Mode
 
-1. **API Integration**: Uses Kroger's official Catalog API v2 with OAuth2 Client Credentials flow
-2. **Product Data**: Fetches product information including names, prices, images, and ingredient statements directly from the API
-3. **Filtering**: Checks product names and ingredient statements against user-defined filters
-4. **Caching**: Implements intelligent caching with filter-based invalidation to improve performance
-5. **Fallback**: If Catalog API v2 returns insufficient scope, automatically falls back to legacy v1 API
+The application includes a mock data mode for development and testing. To use mock data instead of the Kroger API, set `USE_MOCK_DATA=True` in your `.env` file. This is useful for:
 
-## Deployment to Render.com
+- Testing the filtering logic without network requests
+- Developing the frontend without depending on the Kroger API
+- Avoiding rate limiting or API quota issues
 
-### Backend (Flask API)
+**Kroger API (Recommended)**: The application uses the official Kroger Products API (OAuth2 client credentials flow) to fetch product data, including ingredients from the `ingredientStatement` field in the API response. This is fast, reliable, and doesn't require browser automation.
 
-1. Go to [Render Dashboard](https://dashboard.render.com/)
-2. Click **New +** → **Web Service**
-3. Connect your GitHub repository
-4. Configure:
-   - **Name**: `healthy-food-finder-backend` (or your choice)
-   - **Root Directory**: `backend`
-   - **Runtime**: Python 3
-   - **Build Command**: `pip install -r ../requirements.txt`
-   - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT`
-5. Add Environment Variables:
-   - `KROGER_CLIENT_ID` (your Kroger client ID)
-   - `KROGER_CLIENT_SECRET` (your Kroger client secret)
-   - `KROGER_LOCATION_ID` (optional but recommended)
-6. Deploy and copy the backend URL (e.g., `https://your-backend.onrender.com`)
+**Selenium Fallback**: If Kroger API credentials are not configured, the application will attempt to scrape Kroger's website using Selenium (Firefox/LibreWolf). This is less reliable due to bot protection and is only recommended for development/testing.
 
-### Frontend (React Static Site)
+**Setup for Selenium Fallback** (if not using API):
+1. Install Firefox or LibreWolf (required for Selenium):
+   - **Firefox**: `sudo apt install firefox` (or download from https://www.mozilla.org/firefox/)
+   - **LibreWolf** (privacy-focused): Download from https://librewolf.net/ or use AppImage
+   - GeckoDriver will be automatically managed by Selenium
 
-1. In Render Dashboard, click **New +** → **Static Site**
-2. Connect the same GitHub repository
-3. Configure:
-   - **Name**: `healthy-food-finder-frontend` (or your choice)
-   - **Root Directory**: `frontend`
-   - **Build Command**: `npm ci && npm run build`
-   - **Publish Directory**: `build`
-4. Add Environment Variable (if using API base URL):
-   - `REACT_APP_API_BASE_URL` = your backend URL (e.g., `https://your-backend.onrender.com`)
-5. Deploy
+2. The application is configured to use headless mode by default (`HEADLESS=true`)
 
-**Note**: The frontend uses a proxy in development (`package.json`). For production, you may need to configure the API base URL or use CORS properly.
+## Production Deployment
 
-## Development Notes
+### Recommended: Render.com
 
-- **Data Source**: All product data comes from Kroger's official API - no web scraping required
-- **Ingredient Extraction**: Ingredients are extracted directly from the API response (`nutritionInformation[0].ingredientStatement`)
-- **Filtering**: Uses combined text search across product name, ingredient statement, and other metadata
-- **Caching**: Search results are cached per user with filter-based invalidation
-- **Error Handling**: Comprehensive error handling with fallback to legacy API if needed
+This stack (Flask + React) works well on Render.com:
+
+1. **Backend (Web Service)**:
+   - Root Directory: `backend`
+   - Build Command: `pip install -r ../requirements.txt`
+   - Start Command: `gunicorn app:app --bind 0.0.0.0:$PORT`
+   - Environment Variables: `KROGER_CLIENT_ID`, `KROGER_CLIENT_SECRET`, `KROGER_LOCATION_ID`
+
+2. **Frontend (Static Site)**:
+   - Root Directory: `frontend`
+   - Build Command: `npm ci && npm run build`
+   - Publish Directory: `build`
+   - Environment Variables: `REACT_APP_API_BASE_URL` (set to your backend URL)
+
+See the deployment section in the codebase for more details.
+
+## Notes
+
+- **Kroger API**: The application uses the official Kroger Products API for reliable, fast product data. API credentials are required for production use.
+
+- **Product Ingredients**: Product ingredient data is extracted directly from the Kroger API response (`nutritionInformation[0].ingredientStatement`), making searches fast and reliable.
+
+- **Data Persistence**: User filters are currently stored in memory. For production, consider using a database (SQLite, PostgreSQL, etc.) for persistence across server restarts.
+
+- **Rate Limiting**: The Kroger API has rate limits. The application includes caching (5-minute TTL) to reduce API calls. Cache is automatically invalidated when filters change.
+
+- **CORS**: The backend uses Flask-CORS to allow frontend requests. In production, configure CORS to only allow your frontend domain.
 
 ## Future Enhancements
 
-- Support for additional grocery stores (via their official APIs)
-- User accounts and saved filter preferences
+- Support for additional grocery stores (Walmart, Target, etc.)
+- User accounts and saved filter preferences (database persistence)
 - Product favorites and shopping lists
 - Direct cart API integration (if available)
 - Product comparison features
-- Enhanced nutritional information display
+- Nutritional information display
 - Price history and alerts
 
 ## License

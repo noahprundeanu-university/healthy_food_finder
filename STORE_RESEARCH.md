@@ -1,62 +1,95 @@
 # Grocery Store API and Bot Protection Research
 
-## Current Implementation
+## Current Status
 
-### Kroger ✅ (ACTIVE)
-- **API Status**: ✅ Official Catalog API v2 available
-- **Bot Protection**: ✅ No scraping needed - uses official API
-- **Implementation**: OAuth2 Client Credentials flow with `product.compact` scope
-- **Status**: **PRODUCTION READY** - Fully integrated and working
-- **Recommendation**: **RECOMMENDED** - Reliable, fast, and officially supported
+**Active Store**: Kroger (via official API)
 
-**API Details**:
-- Endpoint: `/catalog/v2/products` (with fallback to `/v1/products`)
-- Authentication: OAuth2 Client Credentials
-- Required Scope: `product.compact`
-- Data Includes: Product names, prices, images, ingredient statements, product URLs
+**Removed Stores**: HEB and Walmart (no longer supported)
 
-## Historical Research (For Reference)
+## Research Summary
 
-### HEB (H-E-B) ❌ (REMOVED)
+### HEB (H-E-B) - ❌ Removed
 - **API Status**: ❌ No public API available
 - **Bot Protection**: 🔴 **Very Aggressive** - Uses Incapsula with strict bot detection
-- **Status**: Removed from project due to unreliable scraping
-- **Recommendation**: **NOT RECOMMENDED** - Too difficult to scrape reliably
+- **Status**: Actively blocks automated requests with error codes and incident tracking
+- **Alternative**: HEB offers "H-E-B Select Ingredients®" program (pre-filtered products with 175+ ingredients excluded)
+- **Decision**: **REMOVED** - Too difficult to scrape reliably, no official API
 
-### Walmart ❌ (REMOVED)
-- **API Status**: ⚠️ API available but had integration issues
+### Kroger - ✅ Active
+- **API Status**: ✅ Official Products API available
+- **Bot Protection**: 🟢 Minimal (using official API)
+- **Notes**: 
+  - Official Kroger Products API available through developer program
+  - OAuth2 client credentials flow
+  - Product data includes `ingredientStatement` for filtering
+  - Fast, reliable, no scraping needed
+- **Status**: **ACTIVE** - Primary store supported
+
+### Walmart - ❌ Removed
+- **API Status**: ⚠️ API exists but integration was removed
 - **Bot Protection**: 🟡 Moderate
-- **Status**: Removed from project
-- **Recommendation**: Could be re-added in the future if needed
+- **Decision**: **REMOVED** - Focus on Kroger for better reliability
+
+### Alternative Grocery Stores (Future Consideration)
+
+#### 1. Target
+- **API Status**: ⚠️ Limited public API
+- **Bot Protection**: 🟡 Moderate
+- **Notes**:
+  - Some API access available
+  - Less aggressive than HEB
+- **Recommendation**: **POSSIBLE** - Future consideration
+
+#### 2. Whole Foods (Amazon)
+- **API Status**: ⚠️ Through Amazon API
+- **Bot Protection**: 🟡 Moderate
+- **Notes**:
+  - Access through Amazon Product Advertising API
+  - Requires API key and has usage restrictions
+- **Recommendation**: **POSSIBLE** - Requires Amazon API setup
+
+#### 3. Instacart
+- **API Status**: ✅ Partner API available (requires partnership)
+- **Bot Protection**: 🟡 Moderate
+- **Notes**:
+  - Instacart has partner APIs
+  - Aggregates multiple grocery stores
+  - Requires business partnership for API access
+- **Recommendation**: **CONSIDER** - Good if partnership is possible
+
+## Current Implementation
+
+### Kroger API Integration
+- Uses OAuth2 client credentials flow
+- Scope: `product.compact`
+- Endpoints:
+  - Token: `https://api.kroger.com/v1/connect/oauth2/token`
+  - Products: `https://api.kroger.com/catalog/v2/products` (v2, falls back to v1 if needed)
+- Extracts ingredients from `nutritionInformation[0].ingredientStatement`
+- Fast, reliable, no browser automation needed
+
+### Fallback Mechanism
+- If Kroger API credentials are not set, falls back to Selenium scraping
+- Selenium uses Firefox/LibreWolf in headless mode
+- Less reliable due to bot protection
+- Only recommended for development/testing
 
 ## Recommendations
 
 ### Current Approach: Kroger API (BEST)
-- **Pros**: 
-  - Official API with reliable data
-  - Fast response times
-  - No bot protection issues
-  - Direct ingredient statements
-  - Valid product URLs
-- **Cons**: 
-  - Limited to Kroger stores
-  - Requires API credentials
-- **Effort**: ✅ **COMPLETE** - Fully implemented and working
+- **Pros**: Official API, fast, reliable, includes ingredient data
+- **Cons**: Requires API credentials
+- **Status**: ✅ Implemented and active
 
 ### Future: Multi-Store Support
 - **Pros**: Users can choose their preferred store
 - **Cons**: More complex implementation, need to support multiple APIs
-- **Effort**: Medium - Would require implementing additional store APIs
-
-## Next Steps
-
-1. ✅ **Complete**: Kroger API integration
-2. **Future**: Consider adding other stores with official APIs (e.g., Walmart, Target)
-3. **Future**: Multi-store selection in UI
+- **Effort**: High - Need to support multiple store APIs
+- **Recommendation**: Consider after Kroger integration is stable
 
 ## Implementation Notes
 
 - Official APIs are always more reliable than scraping
-- OAuth2 Client Credentials flow is ideal for server-to-server API access
-- Ingredient data from APIs is more accurate than HTML parsing
-- API-based approach eliminates bot protection concerns
+- Kroger API provides structured data including ingredients
+- No browser automation needed when using API
+- Selenium fallback exists but is not recommended for production
